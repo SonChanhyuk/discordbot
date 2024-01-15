@@ -4,9 +4,12 @@ import asyncio
 from gtts import gTTS
 import time
 import random
+import queue
 
 tts_name = "a.wav"
 alarm_sound = "alarm.mp3"
+
+tts_queue = queue.Queue()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -30,8 +33,11 @@ async def 도움(ctx):
 async def 입장(ctx):
     # 호출한 유저가 속한 음성 채널에 봇을 입장시킵니다.
     if ctx.author.voice:
+        global tts_queue
+        tts_queue = queue.Queue()
         channel = ctx.author.voice.channel
         await channel.connect()
+        await ctx.send("TTS 등장!")
     else:
         await ctx.send("입장 오류 : 음성 채널에 먼저 들어가 주세요!")
 
@@ -41,6 +47,7 @@ async def 나가(ctx):
     # 호출한 유저가 속한 음성 채널에서 봇을 퇴장시킵니다.
     if (ctx.voice_client and ctx.author.voice and ctx.voice_client.channel == ctx.author.voice.channel):
         await ctx.voice_client.disconnect()
+        await ctx.send("TTS 컷!")
     else:
         await ctx.send("퇴장 오류 : 동일한 음성 채널에 먼저 들어가 주세요!")
 
@@ -101,16 +108,33 @@ async def on_message(message):
         return
     
     # TTS로 메시지 음성 변환
-    tts = gTTS(text=message.content, lang='ko')
-    tts.save(tts_name)
+    if ("http:" in message.content or "https:" in message.content or message.content[0] == '-'):
+        return
+    else :
+        tts_queue.put(message.content)
     
-    # 봇이 현재 연결된 음성 채널에서 메시지 음성을 재생
-    if bot.voice_clients:
-        voice_client = bot.voice_clients[0]
-        if voice_client.is_connected():
-            voice_client.play(discord.FFmpegPCMAudio(tts_name))
+    if not bot.voice_clients or not bot.voice_clients[0].is_playing():
+        await process_tts_queue()
     
     await bot.process_commands(message)
+
+async def process_tts_queue():
+    while not tts_queue.empty() and bot.voice_clients:
+        # 큐에서 다음 메시지를 가져와서 TTS로 음성 출력
+        text_to_speak = tts_queue.get()
+        tts = gTTS(text=text_to_speak,lang='ko')
+        tts.save(tts_name)
+        voice_client = bot.voice_clients[0]
+
+        voice_client.play(discord.FFmpegPCMAudio(tts_name))
+        
+        # 음성 출력이 끝나면 다음 메시지 처리를 위해 대기
+        while voice_client.is_playing():
+            await asyncio.sleep(0.5)
+
+@bot.event
+async def on_ready():
+    await bot.change_presence(status=discord.Status.online, activity=discord.Game("Heroes of The Storm"))
 
 # Discord Bot Token
 token = ""
