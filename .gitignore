@@ -3,3 +3,4 @@ token
 *.wav
 *.jpg
 *.ipynb
+venv/
